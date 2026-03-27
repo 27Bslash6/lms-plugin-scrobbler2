@@ -88,7 +88,7 @@ sub _handleResponse {
 	eval { $data = decode_json($content) };
 
 	if ($@ || !$data) {
-		$ecb->('Failed to parse Last.fm response') if $ecb;
+		$ecb->('Failed to parse Last.fm response', 0, 'TRANSIENT') if $ecb;
 		return;
 	}
 

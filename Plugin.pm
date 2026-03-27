@@ -59,6 +59,14 @@ sub shutdownPlugin {
 	Slim::Control::Request::unsubscribe(\&_stopCallback);
 	Slim::Control::Request::unsubscribe(\&_pauseCallback);
 	Slim::Utils::Timers::killTimers(undef, \&_queueFlushTimer);
+
+	for my $client (Slim::Player::Client::clients()) {
+		Slim::Utils::Timers::killTimers($client, \&_checkScrobble);
+		Slim::Utils::Timers::killTimers($client, \&_retryQueue);
+		$client->master->pluginData(scrobbler2_track => undef);
+		$client->master->pluginData(scrobbler2_processing => 0);
+		$client->master->pluginData(scrobbler2_auth_failed => 0);
+	}
 }
 
 # --- Helpers ---
@@ -125,11 +133,12 @@ sub _getTrackMeta {
 	}
 
 	my $meta = {
-		artist   => $track->artistName || '',
-		title    => $track->title || '',
-		album    => ($track->album && $track->album->get_column('title')) || '',
-		duration => $track->secs || 0,
-		tracknum => $track->tracknum || '',
+		artist      => $track->artistName || '',
+		title       => $track->title || '',
+		album       => ($track->album && $track->album->get_column('title')) || '',
+		duration    => $track->secs || 0,
+		tracknum    => $track->tracknum || '',
+		albumartist => ($track->can('albumArtistsString') ? ($track->albumArtistsString || '') : ''),
 	};
 
 	# Remote/streaming tracks: enrich from protocol handler if available
@@ -205,6 +214,9 @@ sub _stopCallback {
 	my $request = shift;
 	my $client = $request->client() || return;
 
+	# Synced players: only process on master
+	return if $client->isSynced() && !Slim::Player::Sync::isMaster($client);
+
 	Slim::Utils::Timers::killTimers($client, \&_checkScrobble);
 	$client->master->pluginData(scrobbler2_track => undef);
 }
@@ -212,6 +224,9 @@ sub _stopCallback {
 sub _pauseCallback {
 	my $request = shift;
 	my $client = $request->client() || return;
+
+	# Synced players: only process on master
+	return if $client->isSynced() && !Slim::Player::Sync::isMaster($client);
 
 	my $paused = $request->getParam('_newvalue');
 	return unless defined $paused;
@@ -334,38 +349,49 @@ sub _processQueue {
 		$apiKey, $secret, $account->{sk}, \@batch,
 		sub {
 			my $data = shift;
-			my $accepted = $data->{scrobbles}{'@attr'}{accepted} || 0;
-			my $ignored = $data->{scrobbles}{'@attr'}{ignored} || 0;
+			eval {
+				my $accepted = $data->{scrobbles}{'@attr'}{accepted} || 0;
+				my $ignored = $data->{scrobbles}{'@attr'}{ignored} || 0;
 
-			main::INFOLOG && $log->info("Scrobbled: $accepted accepted, $ignored ignored");
+				main::INFOLOG && $log->info("Scrobbled: $accepted accepted, $ignored ignored");
 
-			_setQueue($client, \@remaining);
+				_setQueue($client, \@remaining);
+
+				_processQueue($client) if @remaining;
+			};
+			$log->error("Scrobble callback error: $@") if $@;
 			$client->master->pluginData(scrobbler2_processing => 0);
-
-			_processQueue($client) if @remaining;
 		},
 		sub {
 			my ($error, $code, $category) = @_;
-			main::INFOLOG && $log->info("Scrobble submit failed: $error ($category)");
+			$category ||= 'TRANSIENT';
+			eval {
+				main::INFOLOG && $log->info("Scrobble submit failed: $error ($category)");
 
-			for my $item (@batch) {
-				$item->{attempts}++;
-				if ($item->{attempts} < MAX_ATTEMPTS) {
-					unshift @remaining, $item;
+				if ($category eq 'PERMANENT' || $category eq 'AUTH_FAILED') {
+					$log->warn("Dropping batch of " . scalar(@batch) . " scrobbles: $error ($category)");
 				} else {
-					$log->warn("Dropping scrobble after ${\MAX_ATTEMPTS} attempts: $item->{artist} - $item->{title}");
+					for my $item (@batch) {
+						$item->{attempts}++;
+						if ($item->{attempts} < MAX_ATTEMPTS) {
+							unshift @remaining, $item;
+						} else {
+							$log->warn("Dropping scrobble after ${\MAX_ATTEMPTS} attempts: $item->{artist} - $item->{title}");
+						}
+					}
 				}
-			}
-			_setQueue($client, \@remaining);
+				_setQueue($client, \@remaining);
+
+				_handleAuthError($client, $code, $category);
+
+				if (($category eq 'TRANSIENT' || $category eq 'RATE_LIMITED') && @remaining) {
+					my $delay = _backoffDelay($batch[0]->{attempts});
+					Slim::Utils::Timers::killTimers($client, \&_retryQueue);
+					Slim::Utils::Timers::setTimer($client, Time::HiRes::time() + $delay, \&_retryQueue);
+				}
+			};
+			$log->error("Scrobble error callback error: $@") if $@;
 			$client->master->pluginData(scrobbler2_processing => 0);
-
-			_handleAuthError($client, $code, $category);
-
-			if ($category eq 'TRANSIENT' || $category eq 'RATE_LIMITED') {
-				my $delay = _backoffDelay($batch[0]->{attempts});
-				Slim::Utils::Timers::killTimers($client, \&_retryQueue);
-				Slim::Utils::Timers::setTimer($client, Time::HiRes::time() + $delay, \&_retryQueue);
-			}
 		},
 	);
 }

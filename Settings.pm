@@ -103,6 +103,14 @@ sub handler {
 					$params->{accounts} = $accounts;
 					$params->{auth_success} = 1;
 
+					# Clear auth failure flag for all players using this account
+					for my $c (Slim::Player::Client::clients()) {
+						my $playerAcct = $prefs->client($c)->get('account') || '';
+						if ($playerAcct eq $session->{name}) {
+							Plugins::Scrobbler2::Plugin::clearAuthFailure($c);
+						}
+					}
+
 					main::INFOLOG && $log->info("Authorized Last.fm account: $session->{name}");
 
 					my $body = $class->SUPER::handler($client, $params);
