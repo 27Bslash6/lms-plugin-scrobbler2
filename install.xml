@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<extension>
+	<id>27B6-SCROBBLER2-LASTFM</id>
+	<name>PLUGIN_SCROBBLER2_MODULE_NAME</name>
+	<module>Plugins::Scrobbler2::Plugin</module>
+	<version>1.0.0</version>
+	<description>PLUGIN_SCROBBLER2_DESC</description>
+	<creator>27Bslash6</creator>
+	<email>dev@27b.io</email>
+	<category>tools</category>
+	<defaultState>enabled</defaultState>
+	<playerMenu>SETTINGS</playerMenu>
+	<optionsURL>plugins/Scrobbler2/settings/basic.html</optionsURL>
+	<targetApplication>
+		<id>Lyrion Music Server</id>
+		<minVersion>8.3</minVersion>
+		<maxVersion>*</maxVersion>
+	</targetApplication>
+</extension>

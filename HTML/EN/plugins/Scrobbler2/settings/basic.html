@@ -1,0 +1,58 @@
+[% PROCESS settings/header.html %]
+
+[% WRAPPER setting title="SETUP_PLUGIN_SCROBBLER2_API_KEY" desc="SETUP_PLUGIN_SCROBBLER2_API_KEY_DESC" %]
+	<input type="text" name="pref_api_key" value="[% prefs.pref_api_key | html %]" size="40" />
+[% END %]
+
+[% WRAPPER setting title="SETUP_PLUGIN_SCROBBLER2_API_SECRET" desc="SETUP_PLUGIN_SCROBBLER2_API_SECRET_DESC" %]
+	<input type="password" name="pref_api_secret" value="[% prefs.pref_api_secret | html %]" size="40" />
+[% END %]
+
+[% WRAPPER setting title="SETUP_PLUGIN_SCROBBLER2_ACCOUNTS" desc="SETUP_PLUGIN_SCROBBLER2_ACCOUNTS_DESC" %]
+	[% IF accounts.size %]
+		<table>
+		[% FOR account IN accounts %]
+			<tr>
+				<td><b>[% account.username | html %]</b></td>
+				<td>
+					<input type="submit" name="delete" value="[% "SETUP_PLUGIN_SCROBBLER2_REMOVE_ACCOUNT" | string %]"
+						onclick="this.form.elements['delete'].value='[% account.username | html %]'" />
+				</td>
+			</tr>
+		[% END %]
+		</table>
+		<br/>
+	[% END %]
+
+	[% IF auth_pending %]
+		<div style="padding: 10px; margin: 10px 0; background: #ffffcc; border: 1px solid #cccc00;">
+			<p>[% "SETUP_PLUGIN_SCROBBLER2_AUTH_PENDING" | string %]</p>
+			<p><a href="[% auth_url | html %]" target="_blank"><b>[% "SETUP_PLUGIN_SCROBBLER2_AUTH_LINK" | string %]</b></a></p>
+			<br/>
+			<input type="hidden" name="auth_token" value="[% auth_token | html %]" />
+			<input type="submit" name="completeAuth" value="[% "SETUP_PLUGIN_SCROBBLER2_AUTH_COMPLETE" | string %]" />
+		</div>
+	[% ELSIF auth_success %]
+		<div style="padding: 10px; margin: 10px 0; background: #ccffcc; border: 1px solid #00cc00;">
+			<p>[% "SETUP_PLUGIN_SCROBBLER2_AUTH_SUCCESS" | string %]</p>
+		</div>
+	[% ELSIF auth_error %]
+		<div style="padding: 10px; margin: 10px 0; background: #ffcccc; border: 1px solid #cc0000;">
+			<p>[% "SETUP_PLUGIN_SCROBBLER2_AUTH_ERROR" | string %]: [% auth_error | html %]</p>
+		</div>
+	[% ELSIF error %]
+		<div style="padding: 10px; margin: 10px 0; background: #ffcccc; border: 1px solid #cc0000;">
+			<p>[% error | html %]</p>
+		</div>
+	[% END %]
+
+	[% UNLESS auth_pending %]
+		[% IF prefs.pref_api_key && prefs.pref_api_secret %]
+			<input type="submit" name="addAccount" value="[% "SETUP_PLUGIN_SCROBBLER2_ADD_ACCOUNT" | string %]" />
+		[% ELSE %]
+			<p><em>[% "SETUP_PLUGIN_SCROBBLER2_NO_API_KEY" | string %]</em></p>
+		[% END %]
+	[% END %]
+[% END %]
+
+[% PROCESS settings/footer.html %]

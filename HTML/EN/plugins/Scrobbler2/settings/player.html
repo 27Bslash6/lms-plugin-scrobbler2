@@ -1,0 +1,12 @@
+[% PROCESS settings/header.html %]
+
+[% WRAPPER setting title="SETUP_PLUGIN_SCROBBLER2_PLAYER_ACCOUNT" desc="SETUP_PLUGIN_SCROBBLER2_PLAYER_ACCOUNT_DESC" %]
+	<select name="pref_account">
+		<option value=""[% IF !currentAccount %] selected[% END %]>[% "SETUP_PLUGIN_SCROBBLER2_DISABLED" | string %]</option>
+		[% FOR account IN accounts %]
+			<option value="[% account.username | html %]"[% IF account.username == currentAccount %] selected[% END %]>[% account.username | html %]</option>
+		[% END %]
+	</select>
+[% END %]
+
+[% PROCESS settings/footer.html %]

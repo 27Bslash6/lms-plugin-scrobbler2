@@ -1,0 +1,68 @@
+PLUGIN_SCROBBLER2_MODULE_NAME
+	EN	Last.fm Scrobbler 2.0
+
+PLUGIN_SCROBBLER2_DESC
+	EN	Scrobble to Last.fm using the modern Scrobbling 2.0 API. Supports web-based authentication, batch submission, and HTTPS.
+
+SETUP_PLUGIN_SCROBBLER2_API_KEY
+	EN	API Key
+
+SETUP_PLUGIN_SCROBBLER2_API_KEY_DESC
+	EN	Your Last.fm API key. Get one at https://www.last.fm/api/account/create
+
+SETUP_PLUGIN_SCROBBLER2_API_SECRET
+	EN	API Secret
+
+SETUP_PLUGIN_SCROBBLER2_API_SECRET_DESC
+	EN	Your Last.fm API shared secret.
+
+SETUP_PLUGIN_SCROBBLER2_ACCOUNTS
+	EN	Accounts
+
+SETUP_PLUGIN_SCROBBLER2_ACCOUNTS_DESC
+	EN	Authorized Last.fm accounts. Click "Add Account" to authorize a new account via Last.fm.
+
+SETUP_PLUGIN_SCROBBLER2_ADD_ACCOUNT
+	EN	Add Account
+
+SETUP_PLUGIN_SCROBBLER2_REMOVE_ACCOUNT
+	EN	Remove
+
+SETUP_PLUGIN_SCROBBLER2_AUTH_PENDING
+	EN	Authorization pending. Click the link below, authorize on Last.fm, then click "Complete Authorization".
+
+SETUP_PLUGIN_SCROBBLER2_AUTH_LINK
+	EN	Authorize on Last.fm
+
+SETUP_PLUGIN_SCROBBLER2_AUTH_COMPLETE
+	EN	Complete Authorization
+
+SETUP_PLUGIN_SCROBBLER2_AUTH_SUCCESS
+	EN	Account authorized successfully.
+
+SETUP_PLUGIN_SCROBBLER2_AUTH_ERROR
+	EN	Authorization failed. Please try again.
+
+SETUP_PLUGIN_SCROBBLER2_NO_API_KEY
+	EN	Please configure an API key and secret first.
+
+SETUP_PLUGIN_SCROBBLER2_PLAYER_ACCOUNT
+	EN	Last.fm Account
+
+SETUP_PLUGIN_SCROBBLER2_PLAYER_ACCOUNT_DESC
+	EN	Select which Last.fm account to scrobble to for this player, or disable scrobbling.
+
+SETUP_PLUGIN_SCROBBLER2_DISABLED
+	EN	Disabled
+
+PLUGIN_SCROBBLER2_BANNED
+	EN	This client has been banned by Last.fm. Please update the plugin.
+
+PLUGIN_SCROBBLER2_AUTH_REQUIRED
+	EN	Last.fm session expired. Please re-authorize in plugin settings.
+
+PLUGIN_SCROBBLER2_SCROBBLED
+	EN	Scrobbled to Last.fm
+
+PLUGIN_SCROBBLER2_QUEUE_COUNT
+	EN	Pending scrobbles in queue
