@@ -2,10 +2,10 @@
 <extensions>
   <plugins>
     <plugin minTarget="8.3" maxTarget="*" version="1.0.1" name="Scrobbler2">
-      <url>https://github.com/27Bslash6/lms-plugin-scrobbler2/releases/download/1.0.2/Scrobbler2.zip</url>
+      <url>https://github.com/27Bslash6/lms-plugin-scrobbler2/releases/download/1.0.3/Scrobbler2.zip</url>
       <title lang="EN">Last.fm Scrobbler 2.0</title>
       <link>https://github.com/27Bslash6/lms-plugin-scrobbler2</link>
-      <sha>94c5dfe949941cc0a92cd7764e0a1050885eefe0</sha>
+      <sha>05dc23b1bf4ab2bbbb4d26a904de577f55c74ed9</sha>
       <creator>27Bslash6</creator>
       <desc lang="EN">Scrobble to Last.fm using the modern Scrobbling 2.0 API</desc>
       <category>tools</category>

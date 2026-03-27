@@ -9,7 +9,6 @@
 	<email>dev@27b.io</email>
 	<category>tools</category>
 	<defaultState>enabled</defaultState>
-	<playerMenu>SETTINGS</playerMenu>
 	<optionsURL>plugins/Scrobbler2/settings/basic.html</optionsURL>
 	<targetApplication>
 		<minVersion>8.3</minVersion>
