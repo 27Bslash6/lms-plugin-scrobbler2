@@ -1,5 +1,12 @@
 [% PROCESS settings/header.html %]
 
+[% WRAPPER setting title="SETUP_PLUGIN_SCROBBLER2_ENABLE" desc="SETUP_PLUGIN_SCROBBLER2_ENABLE_DESC" %]
+	<select name="pref_enable">
+		<option value="1"[% IF prefs.pref_enable %] selected[% END %]>Yes</option>
+		<option value="0"[% IF !prefs.pref_enable %] selected[% END %]>No</option>
+	</select>
+[% END %]
+
 [% WRAPPER setting title="SETUP_PLUGIN_SCROBBLER2_API_KEY" desc="SETUP_PLUGIN_SCROBBLER2_API_KEY_DESC" %]
 	<input type="text" name="pref_api_key" value="[% prefs.pref_api_key | html %]" size="40" />
 [% END %]

@@ -1,6 +1,7 @@
 package Plugins::Scrobbler2::API;
 
 use strict;
+use warnings;
 
 use Digest::MD5 qw(md5_hex);
 use JSON::XS qw(decode_json);
@@ -11,6 +12,21 @@ use Slim::Utils::Log;
 
 use constant API_URL => 'https://ws.audioscrobbler.com/2.0/';
 use constant AUTH_URL => 'https://www.last.fm/api/auth/';
+
+# Last.fm API error codes
+use constant ERR_INVALID_SERVICE => 2;
+use constant ERR_INVALID_METHOD  => 3;
+use constant ERR_AUTH_FAILED     => 4;
+use constant ERR_INVALID_PARAMS  => 6;
+use constant ERR_OPERATION_FAILED => 8;
+use constant ERR_INVALID_SK      => 9;
+use constant ERR_INVALID_API_KEY => 10;
+use constant ERR_SERVICE_OFFLINE => 11;
+use constant ERR_INVALID_SIG    => 13;
+use constant ERR_TOKEN_EXPIRED  => 14;
+use constant ERR_NOT_ENOUGH_CONTENT => 16;
+use constant ERR_SUSPENDED_KEY  => 26;
+use constant ERR_RATE_LIMITED   => 29;
 
 my $log = logger('plugin.scrobbler2');
 
@@ -25,6 +41,20 @@ sub generateSignature {
 	$sig .= $secret;
 
 	return md5_hex($sig);
+}
+
+sub _buildQueryString {
+	my ($params) = @_;
+	return join('&', map { $_ . '=' . uri_escape_utf8($params->{$_}) } sort keys %{$params});
+}
+
+sub _addTrackParams {
+	my ($params, $track, $suffix) = @_;
+	$suffix //= '';
+	$params->{"album$suffix"}       = $track->{album}       if $track->{album};
+	$params->{"duration$suffix"}    = $track->{duration}     if $track->{duration};
+	$params->{"trackNumber$suffix"} = $track->{tracknum}     if $track->{tracknum};
+	$params->{"albumArtist$suffix"} = $track->{albumartist}  if $track->{albumartist};
 }
 
 sub _request {
@@ -42,11 +72,9 @@ sub _request {
 	);
 
 	if ($httpMethod eq 'GET') {
-		my $url = API_URL . '?' . join('&', map { $_ . '=' . uri_escape_utf8($params->{$_}) } sort keys %{$params});
-		$http->get($url);
+		$http->get(API_URL . '?' . _buildQueryString($params));
 	} else {
-		my $body = join('&', map { $_ . '=' . uri_escape_utf8($params->{$_}) } sort keys %{$params});
-		$http->post(API_URL, 'Content-Type' => 'application/x-www-form-urlencoded', $body);
+		$http->post(API_URL, 'Content-Type' => 'application/x-www-form-urlencoded', _buildQueryString($params));
 	}
 }
 
@@ -92,9 +120,9 @@ sub categorizeError {
 	my ($apiCode, $httpCode) = @_;
 
 	return 'TRANSIENT' if ($httpCode && ($httpCode >= 500 || $httpCode == 0));
-	return 'RATE_LIMITED' if $apiCode == 29;
-	return 'AUTH_FAILED' if $apiCode == 4 || $apiCode == 9 || $apiCode == 14;
-	return 'TRANSIENT' if $apiCode == 8 || $apiCode == 11 || $apiCode == 16;
+	return 'RATE_LIMITED' if $apiCode == ERR_RATE_LIMITED;
+	return 'AUTH_FAILED' if $apiCode == ERR_AUTH_FAILED || $apiCode == ERR_INVALID_SK || $apiCode == ERR_TOKEN_EXPIRED;
+	return 'TRANSIENT' if $apiCode == ERR_OPERATION_FAILED || $apiCode == ERR_SERVICE_OFFLINE || $apiCode == ERR_NOT_ENOUGH_CONTENT;
 	return 'PERMANENT' if $apiCode;
 	return 'TRANSIENT';
 }
@@ -130,10 +158,7 @@ sub updateNowPlaying {
 		artist  => $track->{artist},
 		track   => $track->{title},
 	};
-	$params->{album}       = $track->{album}    if $track->{album};
-	$params->{duration}    = $track->{duration}  if $track->{duration};
-	$params->{trackNumber} = $track->{tracknum}  if $track->{tracknum};
-	$params->{albumArtist} = $track->{albumartist} if $track->{albumartist};
+	_addTrackParams($params, $track);
 
 	_request('track.updateNowPlaying', $params, $secret, $cb, $ecb);
 }
@@ -154,10 +179,7 @@ sub scrobble {
 		$params->{"track[$i]"}     = $track->{title};
 		$params->{"timestamp[$i]"} = $track->{timestamp};
 
-		$params->{"album[$i]"}       = $track->{album}      if $track->{album};
-		$params->{"duration[$i]"}    = $track->{duration}    if $track->{duration};
-		$params->{"trackNumber[$i]"} = $track->{tracknum}    if $track->{tracknum};
-		$params->{"albumArtist[$i]"} = $track->{albumartist} if $track->{albumartist};
+		_addTrackParams($params, $track, "[$i]");
 
 		$i++;
 	}

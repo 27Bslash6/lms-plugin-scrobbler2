@@ -1,13 +1,13 @@
 package Plugins::Scrobbler2::Plugin;
 
 use strict;
+use warnings;
 use base qw(Slim::Plugin::Base);
 
 use Slim::Utils::Log;
 use Slim::Utils::Prefs;
 use Slim::Utils::Timers;
 use Slim::Control::Request;
-use URI::Escape qw(uri_escape_utf8 uri_unescape);
 use Time::HiRes;
 
 use Plugins::Scrobbler2::API;
@@ -16,6 +16,7 @@ use constant MIN_TRACK_LENGTH => 30;
 use constant SCROBBLE_TIME    => 240;
 use constant QUEUE_INTERVAL   => 300;
 use constant MAX_ATTEMPTS     => 10;
+use constant MAX_QUEUE_SIZE   => 500;
 
 my $prefs = preferences('plugin.scrobbler2');
 my $log = Slim::Utils::Log->addLogCategory({
@@ -34,6 +35,7 @@ sub initPlugin {
 		api_key    => '',
 		api_secret => '',
 		accounts   => [],
+		enable     => 1,
 	});
 
 	Slim::Control::Request::subscribe(\&_newsongCallback, [['playlist'], ['newsong']]);
@@ -47,7 +49,6 @@ sub initPlugin {
 		Plugins::Scrobbler2::PlayerSettings->new;
 	}
 
-	# Periodic queue flush
 	Slim::Utils::Timers::setTimer(undef, Time::HiRes::time() + QUEUE_INTERVAL, \&_queueFlushTimer);
 
 	main::INFOLOG && $log->info("Scrobbler2 plugin initialized");
@@ -60,11 +61,27 @@ sub shutdownPlugin {
 	Slim::Utils::Timers::killTimers(undef, \&_queueFlushTimer);
 }
 
-# --- Account Helpers ---
+# --- Helpers ---
+
+sub _getCredentials {
+	my $apiKey = $prefs->get('api_key');
+	my $secret = $prefs->get('api_secret');
+	return unless $apiKey && $secret;
+	return ($apiKey, $secret);
+}
+
+sub _scrobbleThreshold {
+	my $duration = shift;
+	my $t = $duration / 2;
+	return $t > SCROBBLE_TIME ? SCROBBLE_TIME : $t;
+}
 
 sub getAccount {
 	my $client = shift;
 	return unless $client;
+
+	# Check auth failure flag
+	return if $client->master->pluginData('scrobbler2_auth_failed');
 
 	my $username = $prefs->client($client)->get('account');
 	return unless $username;
@@ -102,11 +119,11 @@ sub _getTrackMeta {
 		if ($handler && $handler->can('getMetadataFor')) {
 			my $rmeta = $handler->getMetadataFor($client, $url, 'forceCurrent');
 			if ($rmeta && $rmeta->{artist} && $rmeta->{title}) {
-				$meta->{artist}      = $rmeta->{artist}      if $rmeta->{artist};
-				$meta->{title}       = $rmeta->{title}       if $rmeta->{title};
-				$meta->{album}       = $rmeta->{album}       if $rmeta->{album};
-				$meta->{duration}    = $rmeta->{duration}    if $rmeta->{duration};
-				$meta->{albumartist} = $rmeta->{albumartist} if $rmeta->{albumartist};
+				$meta->{artist}      = $rmeta->{artist};
+				$meta->{title}       = $rmeta->{title};
+				$meta->{album}       = $rmeta->{album}       // $meta->{album};
+				$meta->{duration}    = $rmeta->{duration}     // $meta->{duration};
+				$meta->{albumartist} = $rmeta->{albumartist}  // '';
 			}
 		}
 	}
@@ -120,6 +137,8 @@ sub _newsongCallback {
 	my $request = shift;
 	my $client = $request->client() || return;
 
+	return unless $prefs->get('enable');
+
 	# Synced players: only process on master
 	return if $client->isSynced() && !Slim::Player::Sync::isMaster($client);
 
@@ -132,10 +151,9 @@ sub _newsongCallback {
 	return unless $meta->{artist} && $meta->{title};
 	return unless $meta->{duration} >= MIN_TRACK_LENGTH;
 
-	# Send now playing
-	my $apiKey = $prefs->get('api_key');
-	my $secret = $prefs->get('api_secret');
+	my ($apiKey, $secret) = _getCredentials() or return;
 
+	# Send now playing (fire-and-forget)
 	Plugins::Scrobbler2::API::updateNowPlaying(
 		$apiKey, $secret, $account->{sk}, $meta,
 		sub { main::DEBUGLOG && $log->is_debug && $log->debug("Now playing: $meta->{artist} - $meta->{title}") },
@@ -146,11 +164,7 @@ sub _newsongCallback {
 		},
 	);
 
-	# Set scrobble timer
-	my $checkTime = $meta->{duration} / 2;
-	$checkTime = SCROBBLE_TIME if $checkTime > SCROBBLE_TIME;
-
-	# Store track info for scrobble check
+	# Store track info and set scrobble timer
 	$client->master->pluginData(scrobbler2_track => {
 		%{$meta},
 		timestamp  => time(),
@@ -159,12 +173,12 @@ sub _newsongCallback {
 
 	Slim::Utils::Timers::setTimer(
 		$client,
-		Time::HiRes::time() + $checkTime,
+		Time::HiRes::time() + _scrobbleThreshold($meta->{duration}),
 		\&_checkScrobble,
 	);
 
 	main::DEBUGLOG && $log->is_debug && $log->debug(
-		"Tracking: $meta->{artist} - $meta->{title} (scrobble check in ${checkTime}s)"
+		"Tracking: $meta->{artist} - $meta->{title}"
 	);
 }
 
@@ -184,7 +198,6 @@ sub _pauseCallback {
 	return unless defined $paused;
 
 	if ($paused) {
-		# Paused: kill timer, save remaining time
 		Slim::Utils::Timers::killTimers($client, \&_checkScrobble);
 	} else {
 		# Unpaused: recalculate and reset timer
@@ -192,10 +205,8 @@ sub _pauseCallback {
 		return unless $trackData;
 
 		my $elapsed = Slim::Player::Source::songTime($client);
-		my $checkTime = $trackData->{duration} / 2;
-		$checkTime = SCROBBLE_TIME if $checkTime > SCROBBLE_TIME;
+		my $remaining = _scrobbleThreshold($trackData->{duration}) - $elapsed;
 
-		my $remaining = $checkTime - $elapsed;
 		if ($remaining <= 0) {
 			_checkScrobble($client);
 			return;
@@ -218,7 +229,6 @@ sub _checkScrobble {
 	my $trackData = $client->master->pluginData('scrobbler2_track') || return;
 	my $account = getAccount($client) || return;
 
-	# Verify track is still playing
 	return if $client->isStopped();
 
 	my $currentMeta = _getTrackMeta($client);
@@ -226,29 +236,23 @@ sub _checkScrobble {
 	return unless $currentMeta->{title} eq $trackData->{title}
 		&& $currentMeta->{artist} eq $trackData->{artist};
 
-	# Check elapsed time
 	my $elapsed = Slim::Player::Source::songTime($client);
-	my $required = $trackData->{duration} / 2;
-	$required = SCROBBLE_TIME if $required > SCROBBLE_TIME;
+	my $required = _scrobbleThreshold($trackData->{duration});
 
 	if ($elapsed < $required) {
-		# Not enough time yet, reschedule
-		my $remaining = $required - $elapsed;
 		Slim::Utils::Timers::setTimer(
 			$client,
-			Time::HiRes::time() + $remaining + 1,
+			Time::HiRes::time() + ($required - $elapsed) + 1,
 			\&_checkScrobble,
 		);
 		return;
 	}
 
-	# Queue the scrobble
 	_addToQueue($client, $trackData);
 	$client->master->pluginData(scrobbler2_track => undef);
 
 	main::INFOLOG && $log->info("Queued scrobble: $trackData->{artist} - $trackData->{title}");
 
-	# Trigger queue flush
 	_processQueue($client);
 }
 
@@ -256,18 +260,25 @@ sub _checkScrobble {
 
 sub _getQueue {
 	my $client = shift;
-	return $prefs->client($client)->get('scrobbler2_queue') || [];
+	return $prefs->client($client)->get('queue') || [];
 }
 
 sub _setQueue {
 	my ($client, $queue) = @_;
-	$prefs->client($client)->set(scrobbler2_queue => $queue);
+	$prefs->client($client)->set(queue => $queue);
 }
 
 sub _addToQueue {
 	my ($client, $trackData) = @_;
 
 	my $queue = _getQueue($client);
+
+	# Cap queue size — drop oldest if full
+	while (scalar @{$queue} >= MAX_QUEUE_SIZE) {
+		my $dropped = shift @{$queue};
+		$log->warn("Queue full, dropping oldest: $dropped->{artist} - $dropped->{title}");
+	}
+
 	push @{$queue}, {
 		artist      => $trackData->{artist},
 		title       => $trackData->{title},
@@ -292,10 +303,9 @@ sub _processQueue {
 	my $queue = _getQueue($client);
 	return unless @{$queue};
 
-	$client->master->pluginData(scrobbler2_processing => 1);
+	my ($apiKey, $secret) = _getCredentials() or return;
 
-	my $apiKey = $prefs->get('api_key');
-	my $secret = $prefs->get('api_secret');
+	$client->master->pluginData(scrobbler2_processing => 1);
 
 	# Work on a copy — don't mutate prefs directly
 	my @remaining = @{$queue};
@@ -313,14 +323,12 @@ sub _processQueue {
 			_setQueue($client, \@remaining);
 			$client->master->pluginData(scrobbler2_processing => 0);
 
-			# Process more if queue isn't empty
 			_processQueue($client) if @remaining;
 		},
 		sub {
 			my ($error, $code, $category) = @_;
 			main::INFOLOG && $log->info("Scrobble submit failed: $error ($category)");
 
-			# Re-queue failed items with incremented attempt counter
 			for my $item (@batch) {
 				$item->{attempts}++;
 				if ($item->{attempts} < MAX_ATTEMPTS) {
@@ -334,7 +342,6 @@ sub _processQueue {
 
 			_handleAuthError($client, $code, $category);
 
-			# Schedule retry with backoff
 			if ($category eq 'TRANSIENT' || $category eq 'RATE_LIMITED') {
 				my $delay = _backoffDelay($batch[0]->{attempts});
 				Slim::Utils::Timers::killTimers($client, \&_retryQueue);
@@ -350,27 +357,34 @@ sub _retryQueue {
 }
 
 sub _queueFlushTimer {
-	# Flush queues for all connected clients
 	for my $client (Slim::Player::Client::clients()) {
 		my $queue = _getQueue($client);
 		_processQueue($client) if $queue && @{$queue};
 	}
 
-	# Reschedule
 	Slim::Utils::Timers::setTimer(undef, Time::HiRes::time() + QUEUE_INTERVAL, \&_queueFlushTimer);
 }
 
 sub _backoffDelay {
 	my $attempt = shift || 1;
-	my $delay = 60 * (2 ** ($attempt - 1));
-	return $delay > 7200 ? 7200 : $delay;
+	my $delay = 60 * (2 ** ($attempt - 1));  # seconds
+	return $delay > 7200 ? 7200 : $delay;    # cap at 2 hours
 }
 
 sub _handleAuthError {
 	my ($client, $code, $category) = @_;
 	return unless $category && $category eq 'AUTH_FAILED';
 
-	$log->warn("Last.fm session expired for player " . $client->name . ". Please re-authorize.");
+	# Set flag to stop further API calls until re-authorized
+	$client->master->pluginData(scrobbler2_auth_failed => 1);
+
+	$log->warn("Last.fm session expired for player " . $client->name . ". Re-authorize in plugin settings.");
+}
+
+# Called from Settings.pm when account is re-authorized
+sub clearAuthFailure {
+	my $client = shift;
+	$client->master->pluginData(scrobbler2_auth_failed => 0) if $client;
 }
 
 1;

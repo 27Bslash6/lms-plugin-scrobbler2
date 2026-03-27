@@ -1,6 +1,7 @@
 package Plugins::Scrobbler2::Settings;
 
 use strict;
+use warnings;
 use base qw(Slim::Web::Settings);
 
 use JSON::XS qw(decode_json);
@@ -21,7 +22,7 @@ sub page {
 }
 
 sub prefs {
-	return ($prefs, qw(api_key api_secret));
+	return ($prefs, qw(enable api_key api_secret));
 }
 
 sub handler {

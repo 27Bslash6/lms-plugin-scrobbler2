@@ -1,6 +1,7 @@
 package Plugins::Scrobbler2::PlayerSettings;
 
 use strict;
+use warnings;
 use base qw(Slim::Web::Settings);
 
 use Slim::Utils::Prefs;
