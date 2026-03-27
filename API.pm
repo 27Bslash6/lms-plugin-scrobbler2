@@ -4,6 +4,7 @@ use strict;
 use warnings;
 
 use Digest::MD5 qw(md5_hex);
+use Encode qw(encode_utf8);
 use JSON::XS qw(decode_json);
 use URI::Escape qw(uri_escape_utf8);
 
@@ -40,7 +41,7 @@ sub generateSignature {
 	}
 	$sig .= $secret;
 
-	return md5_hex($sig);
+	return md5_hex(encode_utf8($sig));
 }
 
 sub _buildQueryString {
