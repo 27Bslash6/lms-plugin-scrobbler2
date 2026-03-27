@@ -103,7 +103,26 @@ sub _getTrackMeta {
 	return unless $url;
 
 	my $track = Slim::Schema->objectForUrl({ url => $url });
-	return unless $track;
+
+	# For remote/streaming tracks (TIDAL, etc), objectForUrl may return undef
+	# Try protocol handler directly first for these
+	unless ($track) {
+		my $handler = Slim::Player::ProtocolHandlers->handlerForURL($url);
+		if ($handler && $handler->can('getMetadataFor')) {
+			my $rmeta = $handler->getMetadataFor($client, $url, 'forceCurrent');
+			if ($rmeta && $rmeta->{artist} && $rmeta->{title}) {
+				return {
+					artist      => $rmeta->{artist},
+					title       => $rmeta->{title},
+					album       => $rmeta->{album}       || '',
+					duration    => $rmeta->{duration}    || 0,
+					albumartist => $rmeta->{albumartist} || '',
+					tracknum    => '',
+				};
+			}
+		}
+		return;
+	}
 
 	my $meta = {
 		artist   => $track->artistName || '',
@@ -113,7 +132,7 @@ sub _getTrackMeta {
 		tracknum => $track->tracknum || '',
 	};
 
-	# Remote/streaming tracks: try protocol handler for richer metadata
+	# Remote/streaming tracks: enrich from protocol handler if available
 	if ($track->remote) {
 		my $handler = Slim::Player::ProtocolHandlers->handlerForURL($url);
 		if ($handler && $handler->can('getMetadataFor')) {
@@ -122,8 +141,8 @@ sub _getTrackMeta {
 				$meta->{artist}      = $rmeta->{artist};
 				$meta->{title}       = $rmeta->{title};
 				$meta->{album}       = $rmeta->{album}       // $meta->{album};
-				$meta->{duration}    = $rmeta->{duration}     // $meta->{duration};
-				$meta->{albumartist} = $rmeta->{albumartist}  // '';
+				$meta->{duration}    = $rmeta->{duration}    // $meta->{duration};
+				$meta->{albumartist} = $rmeta->{albumartist} // '';
 			}
 		}
 	}
