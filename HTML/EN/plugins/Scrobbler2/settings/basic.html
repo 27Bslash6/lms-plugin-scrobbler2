@@ -10,13 +10,14 @@
 
 [% WRAPPER setting title="SETUP_PLUGIN_SCROBBLER2_ACCOUNTS" desc="SETUP_PLUGIN_SCROBBLER2_ACCOUNTS_DESC" %]
 	[% IF accounts.size %]
+		<input type="hidden" name="delete" value="" id="deleteAccount" />
 		<table>
 		[% FOR account IN accounts %]
 			<tr>
 				<td><b>[% account.username | html %]</b></td>
 				<td>
-					<input type="submit" name="delete" value="[% "SETUP_PLUGIN_SCROBBLER2_REMOVE_ACCOUNT" | string %]"
-						onclick="this.form.elements['delete'].value='[% account.username | html %]'" />
+					<input type="submit" value="[% "SETUP_PLUGIN_SCROBBLER2_REMOVE_ACCOUNT" | string %]"
+						onclick="document.getElementById('deleteAccount').value='[% account.username | html %]'" />
 				</td>
 			</tr>
 		[% END %]

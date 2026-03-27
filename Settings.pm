@@ -36,83 +36,87 @@ sub handler {
 	if ($params->{delete}) {
 		my $toDelete = ref $params->{delete} ? $params->{delete} : [$params->{delete}];
 		my $accounts = $prefs->get('accounts') || [];
-		$accounts = [grep { !grep { $_ eq $_[0]->{username} } @{$toDelete} } @{$accounts}];
+		$accounts = [grep { my $acct = $_; !grep { $_ eq $acct->{username} } @{$toDelete} } @{$accounts}];
 		$prefs->set('accounts', $accounts);
 		$params->{accounts} = $accounts;
 	}
 
 	# Step 1: Request auth token
 	if ($params->{addAccount}) {
-		return unless $apiKey && $secret;
+		unless ($apiKey && $secret) {
+			$params->{error} = 'API key and secret are required';
+		} else {
+			Plugins::Scrobbler2::API::getToken($apiKey, $secret,
+				sub {
+					my $data = shift;
+					my $token = $data->{token};
 
-		Plugins::Scrobbler2::API::getToken($apiKey, $secret,
-			sub {
-				my $data = shift;
-				my $token = $data->{token};
+					$params->{auth_pending} = 1;
+					$params->{auth_token} = $token;
+					$params->{auth_url} = Plugins::Scrobbler2::API::getAuthURL($apiKey, $token);
 
-				$params->{auth_pending} = 1;
-				$params->{auth_token} = $token;
-				$params->{auth_url} = Plugins::Scrobbler2::API::getAuthURL($apiKey, $token);
+					my $body = $class->SUPER::handler($client, $params);
+					$callback->($client, $params, $body, @args);
+				},
+				sub {
+					my ($error) = @_;
+					$params->{error} = $error;
 
-				my $body = $class->SUPER::handler($client, $params);
-				$callback->($client, $params, $body, @args);
-			},
-			sub {
-				my ($error) = @_;
-				$params->{error} = $error;
-
-				my $body = $class->SUPER::handler($client, $params);
-				$callback->($client, $params, $body, @args);
-			},
-		);
-		return;
+					my $body = $class->SUPER::handler($client, $params);
+					$callback->($client, $params, $body, @args);
+				},
+			);
+			return;
+		}
 	}
 
 	# Step 2: Complete authorization (exchange token for session)
 	if ($params->{completeAuth} && $params->{auth_token}) {
-		return unless $apiKey && $secret;
+		unless ($apiKey && $secret) {
+			$params->{error} = 'API key and secret are required';
+		} else {
+			Plugins::Scrobbler2::API::getSession($apiKey, $secret, $params->{auth_token},
+				sub {
+					my $data = shift;
+					my $session = $data->{session};
 
-		Plugins::Scrobbler2::API::getSession($apiKey, $secret, $params->{auth_token},
-			sub {
-				my $data = shift;
-				my $session = $data->{session};
+					my $accounts = $prefs->get('accounts') || [];
 
-				my $accounts = $prefs->get('accounts') || [];
-
-				# Replace existing account or add new
-				my $found = 0;
-				for my $acct (@{$accounts}) {
-					if ($acct->{username} eq $session->{name}) {
-						$acct->{sk} = $session->{key};
-						$found = 1;
-						last;
+					# Replace existing account or add new
+					my $found = 0;
+					for my $acct (@{$accounts}) {
+						if ($acct->{username} eq $session->{name}) {
+							$acct->{sk} = $session->{key};
+							$found = 1;
+							last;
+						}
 					}
-				}
-				unless ($found) {
-					push @{$accounts}, {
-						username => $session->{name},
-						sk       => $session->{key},
-					};
-				}
+					unless ($found) {
+						push @{$accounts}, {
+							username => $session->{name},
+							sk       => $session->{key},
+						};
+					}
 
-				$prefs->set('accounts', $accounts);
-				$params->{accounts} = $accounts;
-				$params->{auth_success} = 1;
+					$prefs->set('accounts', $accounts);
+					$params->{accounts} = $accounts;
+					$params->{auth_success} = 1;
 
-				main::INFOLOG && $log->info("Authorized Last.fm account: $session->{name}");
+					main::INFOLOG && $log->info("Authorized Last.fm account: $session->{name}");
 
-				my $body = $class->SUPER::handler($client, $params);
-				$callback->($client, $params, $body, @args);
-			},
-			sub {
-				my ($error) = @_;
-				$params->{auth_error} = $error;
+					my $body = $class->SUPER::handler($client, $params);
+					$callback->($client, $params, $body, @args);
+				},
+				sub {
+					my ($error) = @_;
+					$params->{auth_error} = $error;
 
-				my $body = $class->SUPER::handler($client, $params);
-				$callback->($client, $params, $body, @args);
-			},
-		);
-		return;
+					my $body = $class->SUPER::handler($client, $params);
+					$callback->($client, $params, $body, @args);
+				},
+			);
+			return;
+		}
 	}
 
 	return $class->SUPER::handler($client, $params);

@@ -196,7 +196,10 @@ sub _pauseCallback {
 		$checkTime = SCROBBLE_TIME if $checkTime > SCROBBLE_TIME;
 
 		my $remaining = $checkTime - $elapsed;
-		return if $remaining <= 0;  # Already past scrobble point
+		if ($remaining <= 0) {
+			_checkScrobble($client);
+			return;
+		}
 
 		Slim::Utils::Timers::setTimer(
 			$client,
@@ -282,15 +285,21 @@ sub _processQueue {
 	my $client = shift;
 	return unless $client;
 
+	# Prevent concurrent processing
+	return if $client->master->pluginData('scrobbler2_processing');
+
 	my $account = getAccount($client) || return;
 	my $queue = _getQueue($client);
 	return unless @{$queue};
 
+	$client->master->pluginData(scrobbler2_processing => 1);
+
 	my $apiKey = $prefs->get('api_key');
 	my $secret = $prefs->get('api_secret');
 
-	# Submit up to 50 tracks
-	my @batch = splice(@{$queue}, 0, 50);
+	# Work on a copy — don't mutate prefs directly
+	my @remaining = @{$queue};
+	my @batch = splice(@remaining, 0, 50);
 
 	Plugins::Scrobbler2::API::scrobble(
 		$apiKey, $secret, $account->{sk}, \@batch,
@@ -301,11 +310,11 @@ sub _processQueue {
 
 			main::INFOLOG && $log->info("Scrobbled: $accepted accepted, $ignored ignored");
 
-			# Save remaining queue
-			_setQueue($client, $queue);
+			_setQueue($client, \@remaining);
+			$client->master->pluginData(scrobbler2_processing => 0);
 
 			# Process more if queue isn't empty
-			_processQueue($client) if @{$queue};
+			_processQueue($client) if @remaining;
 		},
 		sub {
 			my ($error, $code, $category) = @_;
@@ -315,12 +324,13 @@ sub _processQueue {
 			for my $item (@batch) {
 				$item->{attempts}++;
 				if ($item->{attempts} < MAX_ATTEMPTS) {
-					unshift @{$queue}, $item;
+					unshift @remaining, $item;
 				} else {
 					$log->warn("Dropping scrobble after ${\MAX_ATTEMPTS} attempts: $item->{artist} - $item->{title}");
 				}
 			}
-			_setQueue($client, $queue);
+			_setQueue($client, \@remaining);
+			$client->master->pluginData(scrobbler2_processing => 0);
 
 			_handleAuthError($client, $code, $category);
 

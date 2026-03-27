@@ -42,10 +42,10 @@ sub _request {
 	);
 
 	if ($httpMethod eq 'GET') {
-		my $url = API_URL . '?' . join('&', map { $_ . '=' . uri_escape_utf8($params->{$_}) } keys %{$params});
+		my $url = API_URL . '?' . join('&', map { $_ . '=' . uri_escape_utf8($params->{$_}) } sort keys %{$params});
 		$http->get($url);
 	} else {
-		my $body = join('&', map { $_ . '=' . uri_escape_utf8($params->{$_}) } keys %{$params});
+		my $body = join('&', map { $_ . '=' . uri_escape_utf8($params->{$_}) } sort keys %{$params});
 		$http->post(API_URL, 'Content-Type' => 'application/x-www-form-urlencoded', $body);
 	}
 }
@@ -81,7 +81,7 @@ sub _handleError {
 	my ($http, $ecb) = @_;
 
 	my $error = $http->error || 'Connection failed';
-	my $category = categorizeError(0, $http->code || 0);
+	my $category = categorizeError(0, $http->code // 0);
 
 	main::INFOLOG && $log->is_info && $log->info("Last.fm HTTP error: $error");
 
